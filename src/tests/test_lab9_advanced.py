@@ -31,6 +31,14 @@ def test_pass_k_rejects_bad_args(stats):
             stats.pass_at_k(*args)
 
 
+def test_pass_k_rejects_all_invalid_ranges(stats):
+    for bad in [(0, 0, 1), (-1, 0, 1), (5, -1, 1), (5, 6, 1), (5, 2, 0), (5, 2, -1), (3, 1, 4)]:
+        with pytest.raises(ValueError):
+            stats.pass_at_k(*bad)
+        with pytest.raises(ValueError):
+            stats.pass_hat_k(*bad)
+
+
 def _report(rows, metrics, items=4, seeds=(1, 2)):
     return {"manifest": {"eval_set_sha": "x", "items": items, "seeds": list(seeds)},
             "rows": rows, "metrics": metrics, "evaluator_failures": []}
@@ -73,4 +81,18 @@ def test_slice_check_blocks_a_slice_below_floor():
             r["pass_rate"] = False
     spec = dict(SPEC, slices=[{"name": "denial", "metric": "pass_rate", "min": 0.9, "blocking": True}])
     blocked, _ = gate.slice_check(_report(rows, {"pass_rate": 0.75}), base, spec)
+    assert blocked == ["slice:denial/pass_rate"]
+
+
+def test_slice_check_blocks_significant_drop_above_floor():
+    from lab9 import gate
+
+    # 6 items in denial slice with 0.80 PR vs 1.00 baseline so floor 0.75 passes but CI < 0
+    rows_base = [{"item_id": f"E-{i:03d}", "seed": s, "pass_rate": True, "slices": ["denial"]}
+                 for i in range(6) for s in (1, 2, 3, 4, 5)]
+    rows_pr = [dict(r, pass_rate=(r["seed"] != 5)) for r in rows_base]
+    spec = dict(SPEC, slices=[{"name": "denial", "metric": "pass_rate", "min": 0.75,
+                               "no_significant_drop": True, "blocking": True}])
+    blocked, _ = gate.slice_check(_report(rows_pr, {"pass_rate": 0.8}, items=6, seeds=(1, 2, 3, 4, 5)),
+                                  _report(rows_base, {"pass_rate": 1.0}, items=6, seeds=(1, 2, 3, 4, 5)), spec)
     assert blocked == ["slice:denial/pass_rate"]
