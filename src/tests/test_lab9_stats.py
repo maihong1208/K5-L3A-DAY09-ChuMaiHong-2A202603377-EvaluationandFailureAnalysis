@@ -41,6 +41,16 @@ def test_rogan_gladen_clips(stats):
     assert stats.rogan_gladen(0.0, 0.8, 0.9) == 0.0
 
 
+def test_confusion_rejects_mismatched_lengths(stats):
+    with pytest.raises(ValueError):
+        stats.confusion(["PASS", "FAIL"], ["PASS"])
+
+
+def test_rogan_gladen_handles_zero_denominator_without_crashing(stats):
+    val = stats.rogan_gladen(0.25, 0.5, 0.5)
+    assert 0.0 <= val <= 1.0
+
+
 def test_paired_bootstrap_reference(stats):
     d, lo, hi = stats.paired_bootstrap([1, 1, 0.8, 1, 0.6], [1, 0.8, 0.8, 0.6, 0.6])
     assert d == pytest.approx(0.12, abs=1e-9)
