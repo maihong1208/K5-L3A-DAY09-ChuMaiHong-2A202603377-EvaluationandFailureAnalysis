@@ -74,3 +74,27 @@ def test_build_populates_valid_fm_codes_for_public_claims(tmp_path):
         assert evalset.check(evalset.ITEMS, evalset.LABELS) == []
     finally:
         evalset.ITEMS, evalset.LABELS = old_items, old_labels
+
+
+def test_build_and_build_v2_write_lf_line_endings(tmp_path, evalset_cli, monkeypatch):
+    from lab9 import evalset
+
+    result = evalset_cli("--build")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert b"\r\n" not in (tmp_path / "data/eval/eval_set_v1.jsonl").read_bytes()
+    assert b"\r\n" not in (tmp_path / "data/eval/labels_v1.json").read_bytes()
+
+    pack = Path(__file__).resolve().parents[1] / "data/eval/adversarial_v2.json"
+    fm_map = Path(__file__).resolve().parents[1] / "config/fm_map.yaml"
+    if not pack.is_file() or not fm_map.is_file():
+        pytest.skip("requires v2 pack and fm_map")
+    monkeypatch.setattr(evalset, "ITEMS_V2", tmp_path / "eval_set_v2.jsonl")
+    monkeypatch.setattr(evalset, "LABELS_V2", tmp_path / "labels_v2.json")
+    evalset.build_v2(
+        items_v1=tmp_path / "data/eval/eval_set_v1.jsonl",
+        labels_v1=tmp_path / "data/eval/labels_v1.json",
+        pack=pack,
+        fm_map=fm_map,
+    )
+    assert b"\r\n" not in evalset.ITEMS_V2.read_bytes()
+    assert b"\r\n" not in evalset.LABELS_V2.read_bytes()

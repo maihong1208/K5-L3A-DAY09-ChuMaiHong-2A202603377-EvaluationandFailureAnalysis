@@ -1,0 +1,6 @@
+# Keep eval sets and fixtures byte-identical across Windows, macOS, and Linux.
+*.jsonl text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.py text eol=lf
+*.sqlite binary
