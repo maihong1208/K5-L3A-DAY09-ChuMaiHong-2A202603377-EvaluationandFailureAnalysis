@@ -59,3 +59,40 @@ Card này đi kèm mỗi báo cáo và được dùng lại ở Day 10.
 - **Khi nào tăng eval-set version:**
   - Tăng `eval_set_version` (`v1` → `v2`) khi thêm item mới từ trace thực tế (`provenance.from_trace`) hoặc bổ sung tập adversarial/slice mới; bắt buộc giữ tập item cũ (superset) và chạy lại baseline (`baseline_v2.json`).
   - Không nới lỏng ngưỡng hay sửa nhãn làm đẹp số trên cùng một `eval_set_version` (ratchet); khi thay đổi ngưỡng hoặc thêm metric phải tăng `metric_spec_version` và ghi rõ lý do trong [docs/PRD_v1.1.md](PRD_v1.1.md).
+
+## v2 — Slices, `pass^k`, Anti-Gaming Integrity & Mutation Gate
+
+- **Run ID / eval set SHA:**
+  - Baseline (`swarm`): `E-swarm-20261118-6933` (`src/reports/baseline_v2.json`)
+  - PR kiểm chứng slice (`slice_regression`): `E-slice_regression-20261118-6933`
+  - `eval_set_sha`: `6933a143ef0a` (`src/data/eval/eval_set_v2.jsonl`, `eval_set_version: v2`, `metric_spec_version: "2.0"` tại `src/config/metric_spec_v2.yaml`)
+- **Eval set v2:** `28` item × `5` seed (`11, 22, 33, 44, 55`) = `140` trial/shape, gồm `14` item regression từ v1 + `14` item adversarial nạp in-memory từ `src/data/eval/adversarial_v2.json` (nhãn tách riêng tại `src/data/eval/labels_v2.json`, ánh xạ FM tại `src/config/fm_map.yaml`).
+  - Phân bố theo slice: `money_movement` (`12` item), `denial` (`11` item), `adversarial` (`14` item), `escalation` (`4` item).
+- **Chỉ số baseline v2 (`E-swarm-20261118-6933`):**
+  - Toàn cục: `approval_bypass = 0`, `secret_leak = 0`, `db_fact_kept = 0.9786`, `refund_amount_correct = 0.9786`, `pass_rate = 0.9786`, `reply_ledger_match = 1.0`, `pass_5 = 0.8929`, `pass_at_1 = 0.9786`, `pass_hat_1 = 0.9786`, `pass_at_3 = 1.0`, `pass_hat_3 = 0.9357`, `pass_at_5 = 1.0`, `pass_hat_5 = 0.8929`, `cost_per_success = 50.8077` VND.
+  - Theo slice (`pass_rate`, tất cả bật `no_significant_drop: true`, `blocking: true`):
+    - `denial` (`min: 0.90`): `0.9455`
+    - `money_movement` (`min: 0.95`): `1.0000`
+    - `adversarial` (`min: 0.95`): `0.9714`
+    - `escalation` (`min: 0.95`): `1.0000`
+- **Kiểm tra nhiễu A/A & ý nghĩa với LLM thật:**
+  - Chạy `python -m lab9.mutation --spec config/metric_spec_v2.yaml --aa 66,77,88,99,110` cho kết quả **`Δ = +0.0000` trên tất cả metric** (`pass_rate: 0.9786 → 0.9786`, `pass_hat_5: 0.8929 → 0.8929`, `cost_per_success: 50.8077 → 50.8077`).
+  - `Δ = 0` phản ánh tính tất định theo seed của `MockLLM`. Với **LLM sản xuất (real LLM)**, ngay cả cùng prompt vẫn tồn tại **dải nhiễu A/A khác 0** giữa các lần chạy / bộ seed (do lấy mẫu token, biến thiên thứ tự tool-call hoặc thay đổi nhỏ ở hạ tầng suy luận). Vì thế, trên LLM thật, các ngưỡng sàn (`min`) không được đặt sát baseline nằm lọt vào dải nhiễu A/A mà phải đặt ngoài dải nhiễu đó để tránh báo động giả cho các PR vô hại.
+- **Lựa chọn sàn `pass_hat_5 >= 0.88`:**
+  - Trên baseline `swarm`, `pass_at_5 = 1.0` nhưng `pass_hat_5 = 0.8929` (không phải mọi item đều qua cả 5/5 seed).
+  - Sàn `0.88` nằm dưới `0.8929` đủ để giữ xanh baseline `swarm` (`0.8929 >= 0.88`), `fixed` (`1.0`) và `honest_refactor` (`1.0`) trong điều kiện nhiễu A/A bằng `0`, đồng thời chặn mạnh biến thể `flaky_regression` (lỗi `round_down` chỉ nổ ở `1/5` seed `seed=33`): trên `flaky_regression`, `pass_at_5` vẫn giữ `1.0` và `pass_rate = 0.9143` vẫn trên sàn `0.85`, nhưng `pass_hat_5` rơi xuống **`0.5714`** (`< 0.88`, **BLOCK**).
+- **Vai trò bắt lỗi của từng slice:**
+  - `money_movement` (`min: 0.95`): bắt hồi quy cục bộ liên quan tính toán/chi tiền như `slice_regression` (`E-slice_regression-20261118-6933`, lỗi `sum_parts` trên seed lẻ). Ở biến thể này, trung bình toàn cục đều đạt (`pass_rate = 0.9357` với CI `[-0.121, +0.029]` cắt `0`, `refund_amount_correct = 0.9357`, `pass_hat_5 = 0.8929`), chỉ có `slice:money_movement/pass_rate` (`0.8500`, `Δ -0.150` CI `[-0.300, +0.000]`) và `slice:adversarial/pass_rate` (`0.9143`, `Δ -0.057` CI `[-0.186, +0.057]`) chặn được (`exit 1 — blocked: slice:money_movement/pass_rate, slice:adversarial/pass_rate`).
+  - `adversarial` (`min: 0.95`) + `denial` (`min: 0.90`): bắt các kịch bản ghi đè dữ kiện DB bằng prompt injection / giả mạo thẩm quyền (`FM-03`), trích dẫn điều khoản hết/chưa hiệu lực (`FM-06`), bỏ qua từ chối của host (`FM-02`), hoặc yêu cầu hoàn vượt trần (`FM-05`); trên `seeded_regression`, `slice:denial/pass_rate` tụt xuống `0.3636` và `slice:adversarial/pass_rate` xuống `0.5714`.
+  - `escalation` (`min: 0.95`): bảo vệ ranh giới quyền `owner_order_only` (`FM-09` — từ chối và chuyển cấp khi yêu cầu truy cập/PII chéo `principal_id`).
+- **Giới hạn cỡ mẫu (`5` seed):**
+  - Với `5` seed mỗi item, một lỗi hiếm có xác suất xuất hiện `1/3` ở mỗi lượt chạy vẫn có xác suất qua cả 5 seed do may mắn là `(2/3)^5 ≈ 13.2%` trên một item. Vì vậy bộ `5` seed không đảm bảo bắt chắc các lỗi ngẫu nhiên tỷ lệ `1/3` trở xuống trên từng item; cần tăng số seed (ví dụ `10` seed giảm xác suất lọt xuống `(2/3)^10 ≈ 1.7%`) hoặc bổ sung test tất định khi theo dõi lỗi hiếm.
+- **Bảo vệ chống gian lận báo cáo & ratchet (M7 — `lab9.gate.integrity_check`):**
+  - Chặn trước khi chấm ngưỡng (`exit 1 — blocked: integrity`) đối với mọi báo cáo hoặc spec có dấu hiệu hỏng/gian lận:
+    - Giá trị không hữu hạn (`NaN`, `+inf`, `-inf`) trong `pr["metrics"]` hoặc trường số của `pr["rows"]` (bao gồm `cost`).
+    - Sai số dòng so với `manifest["items"] * len(manifest["seeds"])` hoặc `manifest["seeds"]` bị trùng.
+    - Trùng `(item_id, seed)` trong `pr["rows"]` (kể cả khi bỏ một dòng và nhân bản một dòng để giữ nguyên tổng số dòng, hay chèn thêm dòng dư) hoặc tập `(item_id, seed)` khác baseline (bỏ dòng lỗi, chọn lọc seed).
+    - `evaluator_failures` khác rỗng hoặc bất kỳ dòng nào có giá trị `None` ở một metric có grader (ngăn grader lỗi bị bỏ khỏi mẫu số trung bình).
+    - Tự ý đổi thẻ `slices` của `(item_id, seed)` so với baseline (gỡ thẻ slice lỗi hoặc gán thêm thẻ để pha loãng điểm slice).
+    - **Ratchet** khi truyền `--base-spec` trên cùng `eval_set_version`: cấm xóa metric/slice, cấm hạ `blocking: true → false`, cấm giảm `min`, tăng `max`/`max_increase`, hoặc gỡ `no_significant_drop` (nới ngưỡng chỉ hợp lệ khi tăng `eval_set_version`, ví dụ `v1` → `v2`, kèm baseline mới).
+  - Kiểm chứng M7: `lab9.traps` chặn **`4/4`** bẫy công khai (`evaluator_errors_as_nan`, `dropped_failing_rows`, `cherry_picked_seeds`, `loosened_spec`, mỗi lệnh `lab9.gate` trả `exit 1 — blocked: integrity`); `lab9.mutation` đạt **`mutation score 3/3 · false alarms 0`** (`fixed`, `honest_refactor` → `merge`; `seeded_regression`, `slice_regression`, `flaky_regression` → `block`).
