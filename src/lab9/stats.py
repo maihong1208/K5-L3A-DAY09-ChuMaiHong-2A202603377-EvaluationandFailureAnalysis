@@ -82,6 +82,8 @@ def paired_bootstrap(a: Sequence[float], b: Sequence[float], *, n_resamples: int
         raise ValueError(
             f"Expected non-empty 1D sequences of equal length, got shapes {a_arr.shape} and {b_arr.shape}"
         )
+    if not (np.all(np.isfinite(a_arr)) and np.all(np.isfinite(b_arr))):
+        raise ValueError("paired_bootstrap inputs must be finite")
     if np.array_equal(a_arr, b_arr):
         return (0.0, 0.0, 0.0)
     diff = float(np.mean(a_arr - b_arr))

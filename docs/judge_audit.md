@@ -46,7 +46,7 @@ Trong `judge_helpful_public.csv` (`tp=9, fp=0, fn=21, tn=70`), judge chỉ bắt
 
 1. **Bỏ sót 18/21 ca lệch số tiền đối chiếu sổ cái (`sai tiền`)** (`HL-015`, `HL-016`, `HL-020`, `HL-028`, `HL-035`, `HL-041`, `HL-043`, `HL-053`, `HL-058`, `HL-062`, `HL-070`, `HL-072`, `HL-074`, `HL-087`, `HL-090`, `HL-096`, `HL-098`, `HL-100`):
    - Judge `helpful` chỉ đọc văn bản câu trả lời (`reply`), hoàn toàn **không truy cập được trạng thái thực tế trong ledger/tool output** (ví dụ `HL-015` ghi `55.000đ` trong khi ledger là `40.000đ`; `HL-028` ghi `50.000đ` trong khi ledger là `35.000đ`).
-   - Nhiều câu trả lời sai tiền lại được viết theo mẫu lịch sự rất dài dòng, lặp lại lời xin lỗi (`"Dạ, LogiX thành thật xin lỗi anh/chị..."` ở `HL-016`, `HL-028`, `HL-035`, `HL-041`, `HL-043`, `HL-053`, `HL-058`, `HL-070`, `HL-072`, `HL-074`, `HL-090`, `HL-096`, `HL-098`), tạo thiên kiến (verbosity/politeness bias) khiến LLM judge tin tưởng chấm `PASS`.
+   - Nhiều câu trả lời sai tiền lại được viết theo mẫu lịch sự rất dài dòng, lặp lại lời xin lỗi (`"Dạ, LogiX thành thật xin lỗi..."` ở `HL-016`, `HL-028`, `HL-072`, `HL-096`, `HL-098`; `"Dạ, Một lần nữa LogiX xin lỗi..."` ở `HL-035`, `HL-041`, `HL-070`, `HL-074`; `"Dạ, LogiX rất tiếc..."` ở `HL-043`, `HL-053`, `HL-058`, `HL-090`), tạo thiên kiến (verbosity/politeness bias) khiến LLM judge tin tưởng chấm `PASS`.
 2. **Bỏ sót 3/21 ca xưng hô suồng sã (`sai xưng hô`)** (`HL-047`, `HL-091`, `HL-097`):
    - Cả 3 ca đều mở đầu bằng `"Ok bạn, đơn O-... xử lý rồi nhé."`. Judge `helpful` đánh giá câu trả lời ngắn gọn, đúng trọng tâm và có đề cập mã đơn nên chấm `PASS`, bỏ qua quy tắc xưng hô của CSKH LogiX.
 

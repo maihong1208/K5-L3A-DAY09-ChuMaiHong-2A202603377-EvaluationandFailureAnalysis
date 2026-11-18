@@ -19,7 +19,7 @@ from pydantic_evals.evaluators import Evaluator, EvaluationReason, EvaluatorCont
 Trial = dict[str, Any]   # keys: result, snapshot, unexpected_rows, blob, lab8_pass, lab8_reason, events
 Label = dict[str, Any]
 
-_CURRENCY_RE = re.compile(r"(?<!\d)(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(?:vnđ|vnd|đ)(?!\w)", re.IGNORECASE)
+_CURRENCY_RE = re.compile(r"(?<!\d)(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(?:vnđ|vnd|đồng|đ)(?!\w)", re.IGNORECASE)
 _THOUSANDS_RE = re.compile(r"(?<![A-Za-z0-9_=\-.])(\d{1,3}(?:[.,]\d{3})+)(?!\d)")
 
 
@@ -123,8 +123,10 @@ class NoPreDeduction(Evaluator[Any, Trial]):
             payload = e.get("payload") or {}
             if kind == "quote":
                 quote_vnd = int(payload.get("amount_vnd") or 0)
+                saw_refund_history = False
             elif kind == "refund_history":
-                saw_refund_history = True
+                if int(payload.get("refunded_vnd") or 0) > 0:
+                    saw_refund_history = True
             elif kind == "proposal" and quote_vnd is not None and quote_vnd > 0 and saw_refund_history:
                 prop_vnd = int(payload.get("amount_vnd") or 0)
                 if prop_vnd < quote_vnd:

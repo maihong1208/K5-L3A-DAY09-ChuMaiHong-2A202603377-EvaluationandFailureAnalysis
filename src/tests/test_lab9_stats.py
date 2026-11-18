@@ -66,3 +66,13 @@ def test_paired_bootstrap_rejects_empty_or_mismatched(stats):
         stats.paired_bootstrap([], [])
     with pytest.raises(ValueError):
         stats.paired_bootstrap([1.0, 0.5], [1.0])
+
+
+def test_paired_bootstrap_rejects_nonfinite_inputs(stats):
+    for bad in ([float("nan"), 1.0], [float("inf"), 1.0], [float("-inf"), 1.0]):
+        with pytest.raises(ValueError):
+            stats.paired_bootstrap(bad, [1.0, 1.0])
+        with pytest.raises(ValueError):
+            stats.paired_bootstrap([1.0, 1.0], bad)
+    with pytest.raises(ValueError):
+        stats.paired_bootstrap([float("inf")], [float("inf")])

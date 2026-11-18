@@ -192,3 +192,47 @@ def test_integrity_ratchet_checks_slices_and_blocking():
     looser_v2["metrics"][0]["blocking"] = False
     looser_v2["slices"] = []
     assert gate.integrity_check(base, base, looser_v2, strict_v1) == []
+
+
+def test_integrity_flags_missing_or_blank_eval_set_version_against_base_spec():
+    from lab9 import gate
+
+    base = _report(copy.deepcopy(ROWS), {"pass_rate": 1.0})
+    for bad_ver in (None, ""):
+        cand = copy.deepcopy(SPEC)
+        if bad_ver is None:
+            cand.pop("eval_set_version", None)
+        else:
+            cand["eval_set_version"] = bad_ver
+        cand["metrics"][0]["threshold"]["min"] = 0.5
+        problems = gate.integrity_check(base, base, cand, SPEC)
+        assert any("eval_set_version" in p for p in problems)
+        assert any("loosened min" in p for p in problems)
+
+
+def test_integrity_flags_non_sequence_and_unhashable_manifest_seeds():
+    from lab9 import gate
+
+    base = _report(copy.deepcopy(ROWS), {"pass_rate": 1.0})
+    for bad_seeds in (5, "11", {"a": 1}, [[1], [2]]):
+        rep = _report(copy.deepcopy(ROWS), {"pass_rate": 1.0})
+        rep["manifest"]["seeds"] = bad_seeds
+        problems = gate.integrity_check(rep, base, SPEC)
+        assert problems
+
+
+def test_slice_check_min_failure_with_empty_baseline_overlap_still_blocks():
+    from lab9 import gate
+
+    base_rows = [dict(r, slices=[]) for r in ROWS]
+    pr_rows = copy.deepcopy(ROWS)
+    for r in pr_rows:
+        if "denial" in r["slices"]:
+            r["pass_rate"] = False
+    spec = dict(
+        SPEC,
+        slices=[{"name": "denial", "metric": "pass_rate", "min": 0.9, "no_significant_drop": True, "blocking": True}],
+    )
+    blocked, lines = gate.slice_check(_report(pr_rows, {"pass_rate": 0.5}), _report(base_rows, {"pass_rate": 1.0}), spec)
+    assert blocked == ["slice:denial/pass_rate"]
+    assert any("slice:denial/pass_rate" in line and "BLOCK" in line and "MISSING" not in line for line in lines)

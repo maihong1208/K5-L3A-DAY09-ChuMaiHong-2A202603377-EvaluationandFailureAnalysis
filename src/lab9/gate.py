@@ -82,12 +82,23 @@ def integrity_check(pr: dict, base: dict, spec: dict, base_spec: dict | None = N
                 break
 
     items = pr_manifest.get("items")
-    seeds = pr_manifest.get("seeds") or []
-    if not isinstance(items, int) or isinstance(items, bool) or items < 0 or not seeds:
+    seeds = pr_manifest.get("seeds")
+    if (
+        not isinstance(items, int)
+        or isinstance(items, bool)
+        or items < 0
+        or not isinstance(seeds, (list, tuple))
+        or not seeds
+    ):
         problems.append(f"invalid manifest items={items!r} or seeds={seeds!r}")
     else:
-        if len(set(seeds)) != len(seeds):
-            problems.append("manifest seeds contain duplicates")
+        try:
+            has_dup = len(set(seeds)) != len(seeds)
+        except TypeError:
+            problems.append("manifest seeds contain unhashable element")
+        else:
+            if has_dup:
+                problems.append("manifest seeds contain duplicates")
         expected_rows = items * len(seeds)
         if len(pr_rows) != expected_rows:
             problems.append(f"row count {len(pr_rows)} != manifest {items} x {len(seeds)} ({expected_rows})")
@@ -134,33 +145,38 @@ def integrity_check(pr: dict, base: dict, spec: dict, base_spec: dict | None = N
     if relabeled:
         problems.append(f"slice tags differ from baseline on {len(relabeled)} row(s), first: {relabeled[0]}")
 
-    if base_spec is not None and spec.get("eval_set_version") == base_spec.get("eval_set_version"):
-        spec_metrics = spec.get("metrics") or []
-        cur_metrics = {m["id"]: m for m in spec_metrics}
-        if len(cur_metrics) != len(spec_metrics):
-            problems.append("ratchet: duplicate metric id in spec")
-        for bm in base_spec.get("metrics") or []:
-            mid = bm["id"]
-            if mid not in cur_metrics:
-                problems.append(f"ratchet: metric {mid} removed")
-                continue
-            cm = cur_metrics[mid]
-            problems.extend(
-                _check_ratchet_entry(
-                    f"metric {mid}", bm, cm, bm.get("threshold") or {}, cm.get("threshold") or {}
+    if base_spec is not None:
+        base_ver = base_spec.get("eval_set_version")
+        cur_ver = spec.get("eval_set_version")
+        if base_ver and not cur_ver:
+            problems.append("ratchet: spec missing eval_set_version")
+        if cur_ver == base_ver or (base_ver and not cur_ver):
+            spec_metrics = spec.get("metrics") or []
+            cur_metrics = {m["id"]: m for m in spec_metrics}
+            if len(cur_metrics) != len(spec_metrics):
+                problems.append("ratchet: duplicate metric id in spec")
+            for bm in base_spec.get("metrics") or []:
+                mid = bm["id"]
+                if mid not in cur_metrics:
+                    problems.append(f"ratchet: metric {mid} removed")
+                    continue
+                cm = cur_metrics[mid]
+                problems.extend(
+                    _check_ratchet_entry(
+                        f"metric {mid}", bm, cm, bm.get("threshold") or {}, cm.get("threshold") or {}
+                    )
                 )
-            )
-        spec_slices = spec.get("slices") or []
-        cur_slices = {(s["name"], s["metric"]): s for s in spec_slices}
-        if len(cur_slices) != len(spec_slices):
-            problems.append("ratchet: duplicate slice entry in spec")
-        for bs in base_spec.get("slices") or []:
-            skey = (bs["name"], bs["metric"])
-            if skey not in cur_slices:
-                problems.append(f"ratchet: slice {bs['name']}/{bs['metric']} removed")
-                continue
-            cs = cur_slices[skey]
-            problems.extend(_check_ratchet_entry(f"slice {bs['name']}/{bs['metric']}", bs, cs, bs, cs))
+            spec_slices = spec.get("slices") or []
+            cur_slices = {(s["name"], s["metric"]): s for s in spec_slices}
+            if len(cur_slices) != len(spec_slices):
+                problems.append("ratchet: duplicate slice entry in spec")
+            for bs in base_spec.get("slices") or []:
+                skey = (bs["name"], bs["metric"])
+                if skey not in cur_slices:
+                    problems.append(f"ratchet: slice {bs['name']}/{bs['metric']} removed")
+                    continue
+                cs = cur_slices[skey]
+                problems.extend(_check_ratchet_entry(f"slice {bs['name']}/{bs['metric']}", bs, cs, bs, cs))
 
     return problems
 
@@ -202,7 +218,7 @@ def slice_check(pr: dict, base: dict, spec: dict) -> tuple[list[str], list[str]]
                     note = f"Δ {d:+.3f} CI [{lo:+.3f}, {hi:+.3f}]"
                     if hi < 0:
                         verdict = "fail"
-                else:
+                elif verdict == "ok":
                     verdict = "missing"
         if verdict != "ok" and s.get("blocking"):
             blocked.append(slice_id)
@@ -236,11 +252,14 @@ def check(pr: dict, base: dict, spec: dict, base_spec: dict | None = None) -> tu
         if th.get("no_significant_drop") and val is not None:
             a, b = per_item(pr, mid), per_item(base, mid)
             keys = sorted(set(a) & set(b))
-            d, lo, hi = stats.paired_bootstrap([a[k] for k in keys], [b[k] for k in keys],
-                                               n_resamples=bs.get("n_resamples", 1000), rng=bs.get("rng", 2027))
-            note = f"Δ {d:+.3f} CI [{lo:+.3f}, {hi:+.3f}]"
-            if hi < 0:
-                verdict = "fail"
+            if keys:
+                d, lo, hi = stats.paired_bootstrap([a[k] for k in keys], [b[k] for k in keys],
+                                                   n_resamples=bs.get("n_resamples", 1000), rng=bs.get("rng", 2027))
+                note = f"Δ {d:+.3f} CI [{lo:+.3f}, {hi:+.3f}]"
+                if hi < 0:
+                    verdict = "fail"
+            elif verdict == "ok":
+                verdict = "missing"
         if verdict != "ok" and m.get("blocking"):
             blocked.append(mid)
         label = {"ok": "ok", "missing": "MISSING"}.get(verdict, "BLOCK" if m.get("blocking") else "warn")

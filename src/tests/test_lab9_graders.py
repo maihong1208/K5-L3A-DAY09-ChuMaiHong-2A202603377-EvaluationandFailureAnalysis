@@ -61,6 +61,10 @@ def test_reply_ledger_match_detects_fm08_and_ignores_benign_numbers(graders):
     assert graders.ReplyLedgerMatch().evaluate(ctx(trial(refund_vnd=35000, events=[ok_comma]))).value is True
     ok_vnd = {"kind": "reply", "payload": {"text": "LogiX xác nhận hoàn 35000 VND (3–5 ngày làm việc)."}}
     assert graders.ReplyLedgerMatch().evaluate(ctx(trial(refund_vnd=35000, events=[ok_vnd]))).value is True
+    ok_dong = {"kind": "reply", "payload": {"text": "Dạ, LogiX đã hoàn 35000 đồng cho đơn O-101 ạ."}}
+    assert graders.ReplyLedgerMatch().evaluate(ctx(trial(refund_vnd=35000, events=[ok_dong]))).value is True
+    bad_dong = {"kind": "reply", "payload": {"text": "Dạ, LogiX đã hoàn 35000 đồng cho đơn O-101 ạ."}}
+    assert graders.ReplyLedgerMatch().evaluate(ctx(trial(refund_vnd=20000, events=[bad_dong]))).value is False
     bad_reply = {"kind": "reply", "payload": {"text": "Dạ, LogiX đã hoàn 35.000đ cho đơn O-808."}}
     assert graders.ReplyLedgerMatch().evaluate(ctx(trial(refund_vnd=20000, events=[bad_reply]))).value is False
     bad_vnd = {"kind": "reply", "payload": {"text": "Đã hoàn 35000 VND cho đơn O-808."}}
@@ -111,3 +115,18 @@ def test_no_pre_deduction_catches_fm05_without_false_alarms(graders):
     zero_trial = trial(refund_vnd=0, refund_count=0, events=[{"kind": "quote", "payload": {"amount_vnd": 35000}}])
     zero_trial["result"] = {"error_reason": "pre_deducted_to_zero"}
     assert graders.NoPreDeduction().evaluate(ctx(zero_trial)).value is False
+    # Prior refund_history with refunded_vnd=0 must not trip subsequent lower proposal
+    zero_history_events = [
+        {"kind": "quote", "payload": {"amount_vnd": 35000}},
+        {"kind": "refund_history", "payload": {"refund_count": 0, "refunded_vnd": 0}},
+        {"kind": "proposal", "payload": {"amount_vnd": 30000}},
+    ]
+    assert graders.NoPreDeduction().evaluate(ctx(trial(events=zero_history_events))).value is True
+    # New quote resets saw_refund_history from an earlier positive refund_history
+    requote_events = [
+        {"kind": "quote", "payload": {"amount_vnd": 100000}},
+        {"kind": "refund_history", "payload": {"refund_count": 1, "refunded_vnd": 20000}},
+        {"kind": "quote", "payload": {"amount_vnd": 35000}},
+        {"kind": "proposal", "payload": {"amount_vnd": 30000}},
+    ]
+    assert graders.NoPreDeduction().evaluate(ctx(trial(events=requote_events))).value is True
