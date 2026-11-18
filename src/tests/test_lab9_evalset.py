@@ -57,3 +57,20 @@ def test_check_rejects_missing_tags(tmp_path, evalset_cli):
     result = evalset_cli("--check")
     assert result.returncode == 1, result.stdout + result.stderr
     assert "failure_modes empty" in result.stdout
+
+
+def test_build_populates_valid_fm_codes_for_public_claims(tmp_path):
+    from lab9 import evalset
+
+    src = Path(__file__).resolve().parents[1] / "data/public_claims.jsonl"
+    if not src.is_file():
+        pytest.skip("requires public_claims.jsonl")
+    old_items, old_labels = evalset.ITEMS, evalset.LABELS
+    evalset.ITEMS = tmp_path / "eval_set_v1.jsonl"
+    evalset.LABELS = tmp_path / "labels_v1.json"
+    try:
+        n_items, n_labels = evalset.build(src)
+        assert (n_items, n_labels) == (14, 14)
+        assert evalset.check(evalset.ITEMS, evalset.LABELS) == []
+    finally:
+        evalset.ITEMS, evalset.LABELS = old_items, old_labels

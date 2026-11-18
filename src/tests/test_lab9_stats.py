@@ -41,6 +41,16 @@ def test_rogan_gladen_clips(stats):
     assert stats.rogan_gladen(0.0, 0.8, 0.9) == 0.0
 
 
+def test_confusion_rejects_mismatched_lengths(stats):
+    with pytest.raises(ValueError):
+        stats.confusion(["PASS", "FAIL"], ["PASS"])
+
+
+def test_rogan_gladen_handles_zero_denominator_without_crashing(stats):
+    val = stats.rogan_gladen(0.25, 0.5, 0.5)
+    assert 0.0 <= val <= 1.0
+
+
 def test_paired_bootstrap_reference(stats):
     d, lo, hi = stats.paired_bootstrap([1, 1, 0.8, 1, 0.6], [1, 0.8, 0.8, 0.6, 0.6])
     assert d == pytest.approx(0.12, abs=1e-9)
@@ -49,3 +59,20 @@ def test_paired_bootstrap_reference(stats):
 
 def test_paired_bootstrap_identical_is_zero(stats):
     assert stats.paired_bootstrap([1, 0, 1], [1, 0, 1]) == (0.0, 0.0, 0.0)
+
+
+def test_paired_bootstrap_rejects_empty_or_mismatched(stats):
+    with pytest.raises(ValueError):
+        stats.paired_bootstrap([], [])
+    with pytest.raises(ValueError):
+        stats.paired_bootstrap([1.0, 0.5], [1.0])
+
+
+def test_paired_bootstrap_rejects_nonfinite_inputs(stats):
+    for bad in ([float("nan"), 1.0], [float("inf"), 1.0], [float("-inf"), 1.0]):
+        with pytest.raises(ValueError):
+            stats.paired_bootstrap(bad, [1.0, 1.0])
+        with pytest.raises(ValueError):
+            stats.paired_bootstrap([1.0, 1.0], bad)
+    with pytest.raises(ValueError):
+        stats.paired_bootstrap([float("inf")], [float("inf")])
